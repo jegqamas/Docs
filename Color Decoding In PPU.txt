@@ -1,0 +1,102 @@
+Color Decoding In Nintendo Entertainment System / Family Computer (Nes/Famicom) PPU
+-----------------------------------------------------------------------------------
+Written by Alaa Ibrahim Hadid
+Email: alaahadidfreewares@gmail.com
+
+Sorry for my English :)
+
+This document is released under the Creative Commons Zero v1.0 Universal
+
+CC0 1.0 Universal
+
+    CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE
+    LEGAL SERVICES. DISTRIBUTION OF THIS DOCUMENT DOES NOT CREATE AN
+    ATTORNEY-CLIENT RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS
+    INFORMATION ON AN "AS-IS" BASIS. CREATIVE COMMONS MAKES NO WARRANTIES
+    REGARDING THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS
+    PROVIDED HEREUNDER, AND DISCLAIMS LIABILITY FOR DAMAGES RESULTING FROM
+    THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED
+    HEREUNDER.
+
+The information presented here is still FOR TEST and need confirmation. I found them from the development of My Nes emulator <https://github.com/alaahadid/My-Nes>.
+
+-----------------------------------------------------------------------------------
+This document descripes how Color is outputed from Nintendo Entertainment System / Family Computer (Nes/Famicom) PPU (Picture Processer Unit) and how it is decoded.
+
+Nes uses configurations to generate colors, that's mean there is no need for a palette. 
+
+Nes output colors as it is, for example, it tells blue level 3, green level 4 and red level 2...etc and it is up to tv/video renderer to show color (what is blue, green ..etc).
+
+
+How Nes decode color ?
+----------------------
+
+The Palette value that comes from the palette bank (CPU Address 3F00 - 3F1F) is like this:
+
+bit ...
+7 6 5 4  3 2 1 0
+    | |  | | | |
+    | |  +-+-+-+---- Color channel sequence value
+     +-+------------ Color channel level or strength
+
+When the Color Channel sequence value (bit 0,1,2,3) >= (larger or equal) 14, the Color Channel value (bit 4,5) forced to be 0. 
+This will cause the channel to be darked but still output color, since in all sequences value at index 13 and above is light gray (1 blue, 1 red, 1 green), 
+The result will be dark-light gray scale.
+
+There are 3 sequences for each channel of a color, one for blue channel, one for red channel and another for green channel.
+Each sequence can be presented in an array from 0 to 15 indexes, each index value (array[index]) can be 0 to 7 (3 bits).
+
+The sequences are:
+
+BLUE:  7, 7, 6, 5, 4, 3, 2, 1, 2, 3, 4, 5, 6, 1, 1, 1
+RED:   7, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 1, 1
+GREEN: 7, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 6, 5, 1, 1, 1
+                   |                 |     |
+                   |                 |     +- This color is blue-green (example)
+                   |                 |
+                   |                 +------- This color is green somehow (another example)
+                   |
+                   +------------------------- This color is red with blue... Super Mario Bros's hat (a good example :))
+
+And color in index 0 should be white and in index 13,14 and 15 should be dark
+
+Output Color Channel Structure:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+From Reg $2001 of PPU:
+bit ...
+7 6 5 4  3 2 1 0
+| | |          |
+| | |          +--- Gray scale on-off (1 means on)
++-+-+-------------- Emphasize bits, Blue-Green-Red, each bit enables a small boost of a channel when it that bit is set.
+
+
+A color channel is 8 bits value, from 0 to 255 (With simple math it can be converted into 0 - 100 %, 0 to 1.0 float number or 0 to 3.5 voltage level).
+Or simply like real PPU does, it compines 3 channel values into Analog signal (composite video ?) then send them into tv via VOUT pin. See <https://wiki.nesdev.com/w/index.php/NTSC_video>.
+A color channel should be constructed like this to be displayed correctly, let's say for blue color:
+bit ...
+7 6 5 4  3 2 1 0
+| | | |  | | | |
+| | | |  | +-+-+-------- If Emphasize bit is set for this color (blue here), it will fill with 0x7 to give a small boost, otherwise set to 0
+| | +-+--+-------------- Color value from color sequence (blue here, simply blue_seq[sequence_value] for example)
++-+--------------------- Level value of this color (bit 4,5 from palette bank value) when the Color channel sequence value (or sequence index 'sequence_value', not the value) is < 14.
+
+I think nes does this after constructing each color:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Each color channel value from 0 to 255 is normalized into 0 - 1.0 float value. 
+The 3 colors channels RGB is converted into HSL color space.
+Colors HUE is rotated with 15 degree.
+Colors are converted into YIQ NTSC standard color space. (or converted back from HSL into RGB then into YIQ colors space).
+The color is trasported into TV with Vout signal (video composite) with YIQ NTSC standard color space. 
+
+
+RGB into YIQ colors space converting isn't needed in emulators (after tests done in My Nes emulator, covnerting from RGB into YIQ and then from YIQ into RGB is the same and has no effect),
+RGB coming from nes is what is needed (pure RGB color), after getting (decoding) nes color output as described above in this doc, what an emulator need is to convert RGB color constructed
+into HSL colors space, then rotate H by 15 degree (just applying h - 15 on each color outputed) then convert back into RGB, then send it into video renderer.
+
+My Nes emulator (see <https://github.com/alaahadid/My-Nes> and <https://github.com/alaahadid/My-Nes/blob/master/MyNes/Emu/NesEmu.Colors.cs>) implements this and works. 
+My C Nes, a nes emulator developed in C and based on My Nes emu implements this as well. See <https://github.com/alaahadid/My-C-Nes> and <https://github.com/alaahadid/My-C-Nes/blob/main/NesEmu/Colors.c>.
+
+Alaa Hadid at 10 June 2021 07:30
+END OF DOCUMENT
+---------------
